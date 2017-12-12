@@ -236,7 +236,7 @@ func (sc *sparkyClient) echoTest() {
 	return
 }
 
-// MeteredCopy copies to or from a net.Conn, keeping count of the data it passes
+// downloadCopy copies to or from a net.Conn, keeping count of the data it passes
 func (sc *sparkyClient) MeteredCopy() {
 	var err error
 	var timer *time.Timer

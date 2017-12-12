@@ -77,13 +77,14 @@ func (sc *sparkyClient) beginSession() {
 	}
 
 	if serverBanner.Len() > 0 {
-		// Don't write a banner longer than 60 characters
-		if serverBanner.Len() > 60 {
-			sc.wr.jobs["bannerbox"].(*termui.Par).Text = serverBanner.String()[:59]
-		} else {
-			sc.wr.jobs["bannerbox"].(*termui.Par).Text = serverBanner.String()
-		}
-		sc.wr.Render()
+		sc.titleBanner.setBanner(serverBanner.String())
+		//// Don't write a banner longer than 60 characters
+		//if serverBanner.Len() > 60 {
+		//	sc.wr.jobs["bannerbox"].(*termui.Par).Text = serverBanner.String()[:59]
+		//} else {
+		//	sc.wr.jobs["bannerbox"].(*termui.Par).Text = serverBanner.String()
+		//}
+		//sc.wr.Render()
 	}
 
 }
