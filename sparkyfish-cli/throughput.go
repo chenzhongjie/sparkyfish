@@ -13,6 +13,16 @@ import (
 	"github.com/gizak/termui"
 )
 
+const (
+	// For inbound tests, we bump our timer by 2 seconds to account for
+	// the remote server's test startup time
+	DOWNLOAD_TEST_TIME = time.Second * time.Duration(30+2)
+	UPLOAD_TEST_TIME = time.Second * time.Duration(30)
+	REPORT_INTERVAL  = time.Millisecond * time.Duration(500)
+
+	BLOCK_SIZE  = 200 * 1024 // size of each block of data copied to/from remote
+)
+
 type Throughput struct {
 	sc *sparkyClient
 	processBar *ProcessBar
@@ -92,14 +102,15 @@ func (d *Download) run() {
 }
 
 func (d *Download) downloadProcessor(done <-chan struct{}) {
-	var blockCount, prevBlockCount, tickCount uint
+	var blockCount, prevBlockCount uint
+	var tickCount uint
 	var throughput float64
 	var throughputHist []float64
 
 	// reset progress bar
 	d.processBar.update(0)
 
-	tick := time.NewTicker(time.Duration(reportIntervalMS) * time.Millisecond)
+	tick := time.NewTicker(REPORT_INTERVAL)
 	for {
 		select {
 		case <-d.blockTicker:
@@ -112,12 +123,13 @@ func (d *Download) downloadProcessor(done <-chan struct{}) {
 
 		case <-tick.C:
 			tickCount++
-			throughput = (float64(blockCount - prevBlockCount)) * float64(blockSize*8) / float64(reportIntervalMS)
+			amount := (blockCount - prevBlockCount) * BLOCK_SIZE * 8
+			throughput = float64(amount)/1024/1024*float64(time.Second)/float64(REPORT_INTERVAL)
 
 			// We discard the first element of the throughputHist slice once we have 70
 			// elements stored.  This gives the user a chart that appears to scroll to
 			// the left as new measurements come in and old ones are discarded.
-			if len(throughputHist) >= 70 {
+			if len(throughputHist) >= 40 {
 				throughputHist = throughputHist[1:]
 			}
 
@@ -129,27 +141,21 @@ func (d *Download) downloadProcessor(done <-chan struct{}) {
 			d.wr.Render()
 
 			// Send the latest measurement on to the stats generator
-			d.summary.downloadRcv() <- throughput
+			d.summary.downloadRcv() <- SummaryData{amount, throughput}
 
 			// Update the current block counter
 			prevBlockCount = blockCount
 
 			// update process bar
-			d.processBar.update(tickCount*uint(reportIntervalMS)/(throughputTestLength*10))
+			d.processBar.update(uint(time.Duration(tickCount) * REPORT_INTERVAL * 100/DOWNLOAD_TEST_TIME))
 		}
 	}
 }
 
 func (d *Download) downloadCopy(done chan<- struct{}) {
-	var tl time.Duration
-
 	// Connect to the remote sparkyfish server
 	d.sc.beginSession()
 	defer d.sc.conn.Close()
-
-	// For inbound tests, we bump our timer by 2 seconds to account for
-	// the remote server's test startup time
-	tl = time.Second * time.Duration(throughputTestLength+2)
 
 	// Send the SND command to the remote server, requesting a download test
 	// (remote sends).
@@ -160,7 +166,7 @@ func (d *Download) downloadCopy(done chan<- struct{}) {
 	}
 
 	// Set a timer for running the tests
-	timer := time.NewTimer(tl)
+	timer := time.NewTimer(DOWNLOAD_TEST_TIME)
 	// Receive, tally, and discard incoming data as fast as we can until the sender stops sending or the timer expires
 	for {
 		select {
@@ -170,8 +176,8 @@ func (d *Download) downloadCopy(done chan<- struct{}) {
 			return
 
 		default:
-			// Copy data from our net.Conn to the rubbish bin in (blockSize) KB chunks
-			_, err := io.CopyN(ioutil.Discard, d.sc.conn, 1024*blockSize)
+			// Copy data from our net.Conn to the rubbish bin in (BLOCK_SIZE) KB chunks
+			_, err := io.CopyN(ioutil.Discard, d.sc.conn, BLOCK_SIZE)
 			if err != nil {
 				// Handle the EOF when the test timer has expired at the remote end.
 				if err == io.EOF || err == io.ErrClosedPipe || err == syscall.EPIPE {
@@ -246,7 +252,7 @@ func (u *Upload) uploadProcessor(done <-chan struct{}) {
 	// reset progress bar
 	u.processBar.update(0)
 
-	tick := time.NewTicker(time.Duration(reportIntervalMS) * time.Millisecond)
+	tick := time.NewTicker(REPORT_INTERVAL)
 	for {
 		select {
 		case <-u.blockTicker:
@@ -259,12 +265,13 @@ func (u *Upload) uploadProcessor(done <-chan struct{}) {
 
 		case <-tick.C:
 			tickCount++
-			throughput = (float64(blockCount - prevBlockCount)) * float64(blockSize*8) / float64(reportIntervalMS)
+			amount := (blockCount - prevBlockCount) * BLOCK_SIZE * 8
+			throughput = float64(amount)/1024/1024*float64(time.Second)/float64(REPORT_INTERVAL)
 
 			// We discard the first element of the throughputHist slice once we have 70
 			// elements stored.  This gives the user a chart that appears to scroll to
 			// the left as new measurements come in and old ones are discarded.
-			if len(throughputHist) >= 70 {
+			if len(throughputHist) >= 40 {
 				throughputHist = throughputHist[1:]
 			}
 
@@ -276,26 +283,22 @@ func (u *Upload) uploadProcessor(done <-chan struct{}) {
 			u.wr.Render()
 
 			// Send the latest measurement on to the stats generator
-			u.summary.uploadRcv() <- throughput
+			u.summary.uploadRcv() <- SummaryData{amount, throughput}
 
 			// Update the current block counter
 			prevBlockCount = blockCount
 
 			// update process bar
-			u.processBar.update(tickCount*uint(reportIntervalMS)/(throughputTestLength*10))
+			u.processBar.update(uint(time.Duration(tickCount) * REPORT_INTERVAL * 100/UPLOAD_TEST_TIME))
 		}
 	}
 }
 
 
 func (u *Upload) uploadCopy(done chan<- struct{}) {
-	var tl time.Duration
-
 	// Connect to the remote sparkyfish server
 	u.sc.beginSession()
 	defer u.sc.conn.Close()
-
-	tl = time.Second * time.Duration(throughputTestLength)
 
 	// Send the RCV command to the remote server, requesting an upload test
 	// (remote receives).
@@ -306,7 +309,7 @@ func (u *Upload) uploadCopy(done chan<- struct{}) {
 	}
 
 	// Set a timer for running the tests
-	timer := time.NewTimer(tl)
+	timer := time.NewTimer(UPLOAD_TEST_TIME)
 
 	// Send and tally outgoing data as fast as we can until the receiver stops receiving or the timer expires
 	for {
@@ -317,8 +320,8 @@ func (u *Upload) uploadCopy(done chan<- struct{}) {
 			return
 
 		default:
-			// Copy data from our pre-filled bytes.Reader to the net.Conn in (blockSize) KB chunks
-			_, err := io.CopyN(u.sc.conn, u.sc.randReader, 1024*blockSize)
+			// Copy data from our pre-filled bytes.Reader to the net.Conn in (BLOCK_SIZE) KB chunks
+			_, err := io.CopyN(u.sc.conn, u.sc.randReader, BLOCK_SIZE)
 			if err != nil {
 				// If we get any of these errors, it probably just means that the server closed the connection
 				if err == io.EOF || err == io.ErrClosedPipe || err == syscall.EPIPE {
@@ -330,7 +333,7 @@ func (u *Upload) uploadCopy(done chan<- struct{}) {
 			}
 
 			// Make sure that we have enough runway in our bytes.Reader to handle the next read
-			if u.sc.randReader.Len() <= int(1024*blockSize) {
+			if u.sc.randReader.Len() <= BLOCK_SIZE {
 				// We're nearing the end of the Reader, so seek back to the beginning and start again
 				u.sc.randReader.Seek(0, 0)
 			}
@@ -344,8 +347,13 @@ func (u *Upload) uploadCopy(done chan<- struct{}) {
 
 type Summary struct {
 	wr *widgetRenderer
-	downloadChan chan float64
-	uploadChan   chan float64
+	downloadChan chan SummaryData
+	uploadChan   chan SummaryData
+}
+
+type SummaryData struct {
+	amount uint
+	throughput float64
 }
 
 func newSummary() *Summary {
@@ -355,7 +363,7 @@ func newSummary() *Summary {
 	statsSummary.Width = 60
 	statsSummary.Y = 18
 	statsSummary.BorderLabel = " Throughput Summary "
-	statsSummary.Text = fmt.Sprintf("DOWNLOAD \nCurrent: -- Mbit/s\tMax: --\tAvg: --\n\nUPLOAD\nCurrent: -- Mbit/s\tMax: --\tAvg: --")
+	statsSummary.Text = fmt.Sprintf("DOWNLOAD (Mbit/s)\nCurrent:--\t Max:--\t Avg:--\n\nUPLOAD (Mbit/s)\nCurrent:--\t Max:--\t Avg:--")
 	statsSummary.TextFgColor = termui.ColorWhite | termui.AttrBold
 
 	wr := newwidgetRenderer()
@@ -364,53 +372,57 @@ func newSummary() *Summary {
 
 	return &Summary {
 		wr: wr,
-		downloadChan: make(chan float64),
-		uploadChan:   make(chan float64),
+		downloadChan: make(chan SummaryData),
+		uploadChan:   make(chan SummaryData),
 	}
 }
 
-func (s *Summary) downloadRcv() chan<- float64 {
+func (s *Summary) downloadRcv() chan<- SummaryData {
 	return s.downloadChan
 }
 
-func (s *Summary) uploadRcv() chan<- float64 {
+func (s *Summary) uploadRcv() chan<- SummaryData {
 	return s.uploadChan
 }
 
 func (s *Summary) run(done <-chan struct{}) {
-	var measurement float64
+	var rcvData SummaryData
 	var currentDL, maxDL, avgDL float64
 	var currentUL, maxUL, avgUL float64
-	var dlReadingCount, dlReadingSum float64
-	var ulReadingCount, ulReadingSum float64
+	var dlNum uint
+	var dlAmount uint
+	var ulNum uint
+	var ulAmount uint
 
 	for {
 		select {
 		case <-done:
 			return
 
-		case measurement = <-s.downloadChan:
-			currentDL = measurement
-			dlReadingCount++
-			dlReadingSum = dlReadingSum + currentDL
-			avgDL = dlReadingSum / dlReadingCount
+		case rcvData = <-s.downloadChan:
+			currentDL = rcvData.throughput
 			if currentDL > maxDL {
 				maxDL = currentDL
 			}
+			dlNum++
+			dlAmount += rcvData.amount
+			avgDL = float64(dlAmount)/1024/1024*float64(time.Second)/float64(REPORT_INTERVAL)/float64(dlNum)
+
 			// Update our stats widget with the latest readings
 			s.wr.jobs["statsSummary"].(*termui.Par).Text = fmt.Sprintf("DOWNLOAD (Mbit/s) \nCurrent:%v\t Max:%v\t Avg:%v\n\nUPLOAD (Mbit/s)\nCurrent:%v\t Max:%v\t Avg:%v",
 				strconv.FormatFloat(currentDL, 'f', 1, 64), strconv.FormatFloat(maxDL, 'f', 1, 64), strconv.FormatFloat(avgDL, 'f', 1, 64),
 				strconv.FormatFloat(currentUL, 'f', 1, 64), strconv.FormatFloat(maxUL, 'f', 1, 64), strconv.FormatFloat(avgUL, 'f', 1, 64))
 			s.wr.Render()
 
-		case measurement = <-s.uploadChan:
-			currentUL = measurement
-			ulReadingCount++
-			ulReadingSum = ulReadingSum + currentUL
-			avgUL = ulReadingSum / ulReadingCount
+		case rcvData = <-s.uploadChan:
+			currentUL = rcvData.throughput
 			if currentUL > maxUL {
 				maxUL = currentUL
 			}
+			ulNum++
+			ulAmount += rcvData.amount
+			avgUL = float64(ulAmount)/1024/1024*float64(time.Second)/float64(REPORT_INTERVAL)/float64(ulNum)
+
 			// Update our stats widget with the latest readings
 			s.wr.jobs["statsSummary"].(*termui.Par).Text = fmt.Sprintf("DOWNLOAD (Mbit/s) \nCurrent:%v\t Max:%v\t Avg:%v\n\nUPLOAD (Mbit/s)\nCurrent:%v\t Max:%v\t Avg:%v",
 				strconv.FormatFloat(currentDL, 'f', 1, 64), strconv.FormatFloat(maxDL, 'f', 1, 64), strconv.FormatFloat(avgDL, 'f', 1, 64),

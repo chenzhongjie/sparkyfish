@@ -11,6 +11,10 @@ import (
 	"github.com/gizak/termui"
 )
 
+const (
+	PROTOCOL_VER uint16 = 0x00 // Protocol Version
+)
+
 func (sc *sparkyClient) beginSession() {
 	var err error
 
@@ -24,7 +28,7 @@ func (sc *sparkyClient) beginSession() {
 
 	// First command is always HELO, immediately followed by a single-digit protocol version
 	// e.g. "HELO0".
-	err = sc.writeCommand(fmt.Sprint("HELO", protocolVersion))
+	err = sc.writeCommand(fmt.Sprint("HELO", PROTOCOL_VER))
 	if err != nil {
 		sc.protocolError(err)
 	}

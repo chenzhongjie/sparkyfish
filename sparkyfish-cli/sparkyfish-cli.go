@@ -12,14 +12,6 @@ import (
 	"github.com/gizak/termui"
 )
 
-const (
-	protocolVersion      uint16 = 0x00 // Protocol Version
-	blockSize            int64  = 200  // size (KB) of each block of data copied to/from remote
-	reportIntervalMS     uint64 = 500  // report interval in milliseconds
-	throughputTestLength uint   = 10   // length of time to conduct each throughput test
-	numPings             int    = 30   // number of pings to attempt
-)
-
 type sparkyClient struct {
 	conn               net.Conn
 	reader             *bufio.Reader

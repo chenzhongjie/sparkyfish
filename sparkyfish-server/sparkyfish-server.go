@@ -23,12 +23,11 @@ var (
 )
 
 const (
-	protocolVersion  uint16 = 0x00 // The latest version of the sparkyfish protocol supported
-	blockSize        int64  = 1024 // size of each block copied to/from remote
-	reportIntervalMS uint64 = 1000 // report interval in milliseconds
-	testLength       uint   = 10   // length of throughput tests (sec)
-	pingTestLength   int    = 30   // number of pings allowed in a ping test
-
+	PROTOCAL_VER         uint16 = 0x00 // The latest version of the sparkyfish protocol supported
+	BLOCK_SIZE           int64  = 1024 // size of each block copied to/from remote
+	REPORT_INTERVAL      uint64 = 1000 // report interval in milliseconds
+	THROUGHPUT_TEST_TIME uint   = 30   // length of throughput tests (sec)
+	PING_TIMES                  = 100  // number of pings allowed in a ping test
 )
 
 // TestType is used to indicate the type of test being performed
@@ -145,7 +144,7 @@ func handler(conn net.Conn, ss *sparkyServer) {
 
 	// Close the connection if the client requests a protocol version
 	// greater than what we support
-	if uint16(version) > protocolVersion {
+	if uint16(version) > PROTOCAL_VER {
 		sc.client.Write([]byte("ERR:Protocol version not supported\n"))
 		log.Println("Invalid protocol version requested", version)
 		return
@@ -218,7 +217,7 @@ func handler(conn net.Conn, ss *sparkyServer) {
 }
 
 func (sc *sparkyClient) echoTest() {
-	for c := 0; c <= pingTestLength-1; c++ {
+	for c := 0; c < PING_TIMES; c++ {
 		chr, err := sc.reader.ReadByte()
 		if err != nil {
 			log.Println("Error reading byte:", err)
@@ -244,16 +243,16 @@ func (sc *sparkyClient) MeteredCopy() {
 	// Set a timer that we'll use to stop the test.  If we're running an inbound test,
 	// we extend the timer by two seconds to allow the client to finish its sending.
 	if sc.testType == inbound {
-		timer = time.NewTimer(time.Second * time.Duration(testLength+2))
+		timer = time.NewTimer(time.Second * time.Duration(THROUGHPUT_TEST_TIME+2))
 	} else if sc.testType == outbound {
-		timer = time.NewTimer(time.Second * time.Duration(testLength))
+		timer = time.NewTimer(time.Second * time.Duration(THROUGHPUT_TEST_TIME))
 	}
 
 	for {
 		select {
 		case <-timer.C:
 			if *debug {
-				log.Println(testLength, "seconds have elapsed.")
+				log.Println(THROUGHPUT_TEST_TIME, "seconds have elapsed.")
 			}
 			return
 		default:
@@ -263,7 +262,7 @@ func (sc *sparkyClient) MeteredCopy() {
 				// Try to copy the entire 10MB bytes.Reader to the client.
 				_, err = io.CopyN(sc.client, sc.randReader, 1024*1024*10)
 			case inbound:
-				_, err = io.CopyN(ioutil.Discard, sc.client, 1024*blockSize)
+				_, err = io.CopyN(ioutil.Discard, sc.client, 1024*BLOCK_SIZE)
 			}
 
 			// io.EOF is normal when a client drops off after the test
@@ -287,7 +286,7 @@ func (sc *sparkyClient) MeteredCopy() {
 func (sc *sparkyClient) ReportThroughput() {
 	var blockCount, prevBlockCount uint64
 
-	tick := time.NewTicker(time.Duration(reportIntervalMS) * time.Millisecond)
+	tick := time.NewTicker(time.Duration(REPORT_INTERVAL) * time.Millisecond)
 
 	start := time.Now()
 
@@ -304,7 +303,7 @@ blockcounter:
 			// Every second, we calculate how many blocks were received
 			// and derive an average throughput rate.
 			if *debug {
-				log.Printf("[%v] %v Kbit/sec", sc.client.RemoteAddr(), (blockCount-prevBlockCount)*uint64(blockSize*8)*(1000/reportIntervalMS))
+				log.Printf("[%v] %v Kbit/sec", sc.client.RemoteAddr(), (blockCount-prevBlockCount)*uint64(BLOCK_SIZE*8)*(1000/REPORT_INTERVAL))
 			}
 			prevBlockCount = blockCount
 		}
@@ -315,7 +314,7 @@ blockcounter:
 		mbCopied := float64(blockCount * 10)
 		log.Printf("[%v] Sent %v MB in %.2f seconds (%.2f Mbit/s)", sc.client.RemoteAddr(), mbCopied, duration, (mbCopied/duration)*8)
 	} else if sc.testType == inbound {
-		mbCopied := float64(blockCount * uint64(blockSize) / 1024)
+		mbCopied := float64(blockCount * uint64(BLOCK_SIZE) / 1024)
 		log.Printf("[%v] Recd %v MB in %.2f seconds (%.2f) Mbit/s", sc.client.RemoteAddr(), mbCopied, duration, (mbCopied/duration)*8)
 	}
 }

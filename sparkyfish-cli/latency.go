@@ -10,6 +10,9 @@ import (
 	"github.com/gizak/termui"
 )
 
+const (
+	PING_TIMES = 100 // number of pings to attempt
+)
 
 type Latency struct {
 	sc *sparkyClient
@@ -26,7 +29,7 @@ func NewLatency(sc *sparkyClient, processBar *ProcessBar) *Latency {
 	latencyGroup := termui.NewSparklines(latencyGraph)
 	latencyGroup.Y = 3
 	latencyGroup.Height = 3
-	latencyGroup.Width = 30
+	latencyGroup.Width = 40
 	latencyGroup.Border = false
 	latencyGroup.Lines[0].Data = []int{0}
 
@@ -40,7 +43,7 @@ func NewLatency(sc *sparkyClient, processBar *ProcessBar) *Latency {
 	latencyStats := termui.NewPar("")
 	latencyStats.Height = 4
 	latencyStats.Width = 30
-	latencyStats.X = 32
+	latencyStats.X = 42
 	latencyStats.Y = 2
 	latencyStats.Border = false
 	latencyStats.TextFgColor = termui.ColorWhite | termui.AttrBold
@@ -86,7 +89,7 @@ func (l *Latency) run() {
 		log.Fatalln(err)
 	}
 
-	for c := 0; c <= numPings-1; c++ {
+	for c := 0; c < PING_TIMES; c++ {
 		startTime := time.Now()
 		l.sc.conn.Write([]byte{byte(c)})
 
@@ -124,17 +127,21 @@ func (l *Latency) latencyProcessor(ready chan<- struct{}, done <-chan struct{}) 
 			// Calculate our ping time in microseconds
 			ptMicro := pt.Nanoseconds() / 1000
 
+			if len(latencyHist) >= 40 {
+				latencyHist = latencyHist[1:]
+			}
+
 			// Add this ping to our ping history
 			latencyHist = append(latencyHist, ptMicro)
 
 			ptMin, ptMax = latencyHist.minMax()
 
 			// update the progress bar
-			l.processBar.update(uint(len(latencyHist)*100/numPings))
+			l.processBar.update(uint(len(latencyHist)*100/ PING_TIMES))
 
 			// Update the ping stats widget
 			l.wr.jobs["latency"].(*termui.Sparklines).Lines[0].Data = latencyHist.toMilli()
-			l.wr.jobs["latencystats"].(*termui.Par).Text = fmt.Sprintf("Cur/Min/Max\n%.2f/%.2f/%.2f ms\nAvg/σ\n%.2f/%.2f ms",
+			l.wr.jobs["latencystats"].(*termui.Par).Text = fmt.Sprintf("Cur/Min/Max (ms)\n%.1f/%.1f/%.1f\nAvg/σ (ms)\n%.1f/%.1f",
 				float64(ptMicro/1000), float64(ptMin/1000), float64(ptMax/1000), latencyHist.mean()/1000, latencyHist.stdDev()/1000)
 			l.wr.Render()
 		}
