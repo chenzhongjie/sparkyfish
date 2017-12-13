@@ -35,7 +35,7 @@ func NewLatency(sc *sparkyClient, processBar *ProcessBar) *Latency {
 
 	latencyTitle := termui.NewPar("Latency")
 	latencyTitle.Height = 1
-	latencyTitle.Width = 30
+	latencyTitle.Width = 40
 	latencyTitle.Border = false
 	latencyTitle.TextFgColor = termui.ColorGreen
 	latencyTitle.Y = 2
@@ -68,6 +68,8 @@ func (l *Latency) run() {
 	//l.progressBarReset <- true
 	l.processBar.update(0)
 
+	l.wr.jobs["latencytitle"].(*termui.Par).Text =
+		fmt.Sprint("Latency ", time.Now().Format("2006-01-02 15:04:05 -07"))
 	processorReady := make(chan struct{})
 	doneProcessor := make(chan struct{})
 	// start our ping processor
