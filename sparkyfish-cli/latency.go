@@ -113,6 +113,7 @@ func (l *Latency) run() {
 func (l *Latency) latencyProcessor(ready chan<- struct{}, done <-chan struct{}) {
 	var ptMax, ptMin int
 	var latencyHist pingHistory
+	var pingNum uint
 
 	// Signal pingTest() that we're ready
 	close(ready)
@@ -124,6 +125,7 @@ func (l *Latency) latencyProcessor(ready chan<- struct{}, done <-chan struct{}) 
 			// If we've been pinging for maxPingTestLength, call it quits
 			return
 		case pt := <-l.pingTime:
+			pingNum++
 			// Calculate our ping time in microseconds
 			ptMicro := pt.Nanoseconds() / 1000
 
@@ -137,7 +139,7 @@ func (l *Latency) latencyProcessor(ready chan<- struct{}, done <-chan struct{}) 
 			ptMin, ptMax = latencyHist.minMax()
 
 			// update the progress bar
-			l.processBar.update(uint(len(latencyHist)*100/ PING_TIMES))
+			l.processBar.update(pingNum*100/PING_TIMES)
 
 			// Update the ping stats widget
 			l.wr.jobs["latency"].(*termui.Sparklines).Lines[0].Data = latencyHist.toMilli()
